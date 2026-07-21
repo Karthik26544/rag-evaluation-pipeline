@@ -1,0 +1,167 @@
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import Optional
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import os
+import uuid
+import json
+from dotenv import load_dotenv
+
+from services.vector_store import VectorStore
+from services.hybrid_search import HybridSearch
+from services.query_processor import QueryProcessor
+
+load_dotenv()
+
+router = APIRouter()
+vector_store = VectorStore()
+hybrid_search = HybridSearch()
+query_processor = QueryProcessor()
+
+class QueryRequest(BaseModel):
+    question: str
+    search_type: str = "hybrid"
+    chunking_strategy: Optional[str] = None
+    use_query_rewriting: bool = True
+    top_k: int = 5
+
+def get_db():
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    return conn
+
+@router.post("/ask")
+def ask_question(request: QueryRequest):
+    original_question = request.question
+    question = original_question
+
+    if request.use_query_rewriting:
+        question = query_processor.rewrite_query(original_question)
+
+    if request.search_type == "vector":
+        results = vector_store.search(
+            question,
+            top_k=request.top_k,
+            strategy_filter=request.chunking_strategy
+        )
+
+    elif request.search_type == "bm25":
+        conn = get_db()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("""
+            SELECT content, document_id, chunk_index, chunking_strategy 
+            FROM chunks LIMIT 10000
+        """)
+        all_chunks = [dict(row) for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+
+        hybrid_search.build_index(all_chunks)
+        results = hybrid_search.search(question, top_k=request.top_k)
+
+    elif request.search_type == "hybrid":
+        vector_results = vector_store.search(
+            question,
+            top_k=20,
+            strategy_filter=request.chunking_strategy
+        )
+
+        conn = get_db()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("""
+            SELECT content, document_id, chunk_index, chunking_strategy 
+            FROM chunks LIMIT 10000
+        """)
+        all_chunks = [dict(row) for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+
+        hybrid_search.build_index(all_chunks)
+        bm25_results = hybrid_search.search(question, top_k=20)
+        results = hybrid_search.hybrid_search(vector_results, bm25_results)
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid search_type. Use vector, bm25, or hybrid"
+        )
+
+    if not results:
+        return {
+            "answer": "No relevant documents found. Please upload documents first.",
+            "sources": [],
+            "confidence": 0.0,
+            "rewritten_question": question,
+            "latency_ms": 0,
+            "search_type": request.search_type,
+            "chunks_found": 0
+        }
+
+    answer, confidence, latency = query_processor.generate_answer(
+        question=question,
+        context_chunks=results,
+        original_question=original_question
+    )
+
+    sources = [
+        {
+            "content": r["content"][:200],
+            "document_id": r.get("document_id", ""),
+            "score": r.get("score", r.get("final_score", 0))
+        }
+        for r in results[:5]
+    ]
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO queries 
+        (id, question, rewritten_question, answer, sources, 
+         search_type, chunking_strategy, latency_ms, confidence_score)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (
+        str(uuid.uuid4()),
+        original_question,
+        question,
+        answer,
+        json.dumps(sources),
+        request.search_type,
+        request.chunking_strategy,
+        latency,
+        confidence
+    ))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return {
+        "answer": answer,
+        "sources": sources,
+        "confidence": confidence,
+        "rewritten_question": question if request.use_query_rewriting else None,
+        "latency_ms": latency,
+        "search_type": request.search_type,
+        "chunks_found": len(results)
+    }
+
+
+@router.get("/history")
+def get_query_history():
+    conn = get_db()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    cursor.execute("""
+        SELECT id, question, answer, confidence_score, 
+               latency_ms, search_type, created_at
+        FROM queries
+        ORDER BY created_at DESC
+        LIMIT 50
+    """)
+
+    queries = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    return {"queries": [dict(q) for q in queries]}
