@@ -22,9 +22,16 @@ class VectorStore:
         self.model = SentenceTransformer("BAAI/bge-small-en-v1.5")
         print("Embedding model loaded successfully")
 
-        self.client = QdrantClient(
-            url=os.getenv("QDRANT_URL", "http://localhost:6333")
-        )
+qdrant_api_key = os.getenv("QDRANT_API_KEY")
+if qdrant_api_key:
+    self.client = QdrantClient(
+        url=os.getenv("QDRANT_URL"),
+        api_key=qdrant_api_key
+    )
+else:
+    self.client = QdrantClient(
+        url=os.getenv("QDRANT_URL", "http://localhost:6333")
+    )
         self.collection_name = os.getenv("COLLECTION_NAME", "documents")
         self._ensure_collection()
 
