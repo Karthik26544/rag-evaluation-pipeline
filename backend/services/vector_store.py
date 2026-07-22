@@ -1,3 +1,4 @@
+# Version 2 - Updated model to gemini-embedding-001
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
