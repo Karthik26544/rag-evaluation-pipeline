@@ -52,28 +52,28 @@ class VectorStore:
         self.collection_name = os.getenv("COLLECTION_NAME", "documents")
         self._ensure_collection()
 
-    def _embed(self, texts):
-        if USE_GEMINI_EMBEDDINGS:
-            embeddings = []
-            for text in texts:
-                result = genai.embed_content(
-                    model="models/text-embedding-004",
-                    content=text,
-                    task_type="retrieval_document"
-                )
-                embeddings.append(result['embedding'])
-            return embeddings
+def _embed(self, texts):
+    if USE_GEMINI_EMBEDDINGS:
+        embeddings = []
+        for text in texts:
+            result = genai.embed_content(
+                model="models/embedding-001",
+                content=text,
+                task_type="retrieval_document"
+            )
+            embeddings.append(result['embedding'])
+        return embeddings
         else:
             return self.model.encode(texts, show_progress_bar=False).tolist()
 
-    def _embed_query(self, text):
-        if USE_GEMINI_EMBEDDINGS:
-            result = genai.embed_content(
-                model="models/text-embedding-004",
-                content=text,
-                task_type="retrieval_query"
-            )
-            return result['embedding']
+def _embed_query(self, text):
+    if USE_GEMINI_EMBEDDINGS:
+        result = genai.embed_content(
+            model="models/embedding-001",
+            content=text,
+            task_type="retrieval_query"
+        )
+        return result['embedding']
         else:
             return self.model.encode([text])[0].tolist()
 
