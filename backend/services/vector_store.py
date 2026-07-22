@@ -19,7 +19,8 @@ USE_GEMINI_EMBEDDINGS = os.getenv("USE_GEMINI_EMBEDDINGS", "false").lower() == "
 if USE_GEMINI_EMBEDDINGS:
     import google.generativeai as genai
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    EMBEDDING_DIM = 768
+    EMBEDDING_DIM = 3072
+    GEMINI_EMBED_MODEL = "models/gemini-embedding-001"
 else:
     from sentence_transformers import SentenceTransformer
     EMBEDDING_DIM = 384
@@ -29,7 +30,7 @@ class VectorStore:
 
     def __init__(self):
         if USE_GEMINI_EMBEDDINGS:
-            print("Using Gemini embeddings (cloud mode)")
+            print(f"Using Gemini embeddings: {GEMINI_EMBED_MODEL} (dim {EMBEDDING_DIM})")
             self.model = None
         else:
             print("Loading local embedding model...")
@@ -52,28 +53,28 @@ class VectorStore:
         self.collection_name = os.getenv("COLLECTION_NAME", "documents")
         self._ensure_collection()
 
-def _embed(self, texts):
-    if USE_GEMINI_EMBEDDINGS:
-        embeddings = []
-        for text in texts:
-            result = genai.embed_content(
-                model="models/embedding-001",
-                content=text,
-                task_type="retrieval_document"
-            )
-            embeddings.append(result['embedding'])
-        return embeddings
+    def _embed(self, texts):
+        if USE_GEMINI_EMBEDDINGS:
+            embeddings = []
+            for text in texts:
+                result = genai.embed_content(
+                    model=GEMINI_EMBED_MODEL,
+                    content=text,
+                    task_type="retrieval_document"
+                )
+                embeddings.append(result['embedding'])
+            return embeddings
         else:
             return self.model.encode(texts, show_progress_bar=False).tolist()
 
-def _embed_query(self, text):
-    if USE_GEMINI_EMBEDDINGS:
-        result = genai.embed_content(
-            model="models/embedding-001",
-            content=text,
-            task_type="retrieval_query"
-        )
-        return result['embedding']
+    def _embed_query(self, text):
+        if USE_GEMINI_EMBEDDINGS:
+            result = genai.embed_content(
+                model=GEMINI_EMBED_MODEL,
+                content=text,
+                task_type="retrieval_query"
+            )
+            return result['embedding']
         else:
             return self.model.encode([text])[0].tolist()
 
@@ -89,7 +90,7 @@ def _embed_query(self, text):
                     distance=Distance.COSINE
                 )
             )
-            print(f"Created collection: {self.collection_name}")
+            print(f"Created collection: {self.collection_name} (dim {EMBEDDING_DIM})")
         else:
             print(f"Collection exists: {self.collection_name}")
 
