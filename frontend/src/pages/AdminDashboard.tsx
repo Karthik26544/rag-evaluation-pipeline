@@ -14,11 +14,27 @@ const API = process.env.REACT_APP_API_URL;
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444'];
 
+const defaultStats = {
+  total_users: 0, total_documents: 0, total_queries: 0,
+  total_evaluations: 0, new_users_week: 0, queries_today: 0,
+  avg_latency_ms: 0, avg_confidence: 0, active_today: 0,
+  high_confidence_queries: 0, estimated_tokens_used: 0, estimated_cost_usd: 0
+};
+
+const defaultAnalytics = {
+  users_growth: [],
+  queries_growth: [],
+  search_distribution: [],
+  chunking_distribution: [],
+  top_users: []
+};
+
 export default function AdminDashboard() {
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<any>(defaultStats);
   const [users, setUsers] = useState<any[]>([]);
   const [queries, setQueries] = useState<any[]>([]);
-  const [analytics, setAnalytics] = useState<any>(null);
+  const [analytics, setAnalytics] = useState<any>(defaultAnalytics);
+  const [loaded, setLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -30,7 +46,7 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-const fetchAll = async () => {
+  const fetchAll = async () => {
     try {
       const results = await Promise.allSettled([
         axios.get(`${API}/admin/stats`),
@@ -40,35 +56,22 @@ const fetchAll = async () => {
       ]);
       
       if (results[0].status === 'fulfilled') {
-        setStats(results[0].value.data);
-      } else {
-        console.error('Stats failed:', results[0].reason);
-        setStats({
-          total_users: 0, total_documents: 0, total_queries: 0,
-          total_evaluations: 0, new_users_week: 0, queries_today: 0,
-          avg_latency_ms: 0, avg_confidence: 0, active_today: 0,
-          high_confidence_queries: 0, estimated_tokens_used: 0, estimated_cost_usd: 0
-        });
+        setStats({ ...defaultStats, ...results[0].value.data });
       }
-      
       if (results[1].status === 'fulfilled') {
         setUsers(results[1].value.data?.users || []);
       }
-      
       if (results[2].status === 'fulfilled') {
         setQueries(results[2].value.data?.queries || []);
       }
-      
       if (results[3].status === 'fulfilled') {
-        setAnalytics(results[3].value.data);
-      } else {
-        setAnalytics({
-          users_growth: [], queries_growth: [],
-          search_distribution: [], chunking_distribution: [], top_users: []
-        });
+        setAnalytics({ ...defaultAnalytics, ...results[3].value.data });
       }
+      
+      setLoaded(true);
     } catch (err: any) {
       console.error('Admin fetch error:', err);
+      setLoaded(true);
     }
   };
 
@@ -89,7 +92,7 @@ const fetchAll = async () => {
 
   const deleteUser = async (userId: string, event: React.MouseEvent) => {
     event.stopPropagation();
-    if (!window.confirm('Delete this user? This cannot be undone.')) return;
+    if (!window.confirm('Delete this user?')) return;
     try {
       await axios.delete(`${API}/admin/users/${userId}`);
       toast.success('User deleted');
@@ -127,11 +130,14 @@ const fetchAll = async () => {
   };
 
   const filteredUsers = users.filter(u =>
-    u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchTerm.toLowerCase())
+    (u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (u.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (!stats) {
+  const pct = (n: number) => Math.round((Number(n) || 0) * 100);
+  const num = (n: any) => Number(n) || 0;
+
+  if (!loaded) {
     return (
       <div className="max-w-6xl mx-auto p-8 text-center text-gray-400">
         <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
@@ -142,7 +148,7 @@ const fetchAll = async () => {
 
   return (
     <div className="max-w-6xl mx-auto p-8">
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <Award className="text-yellow-400" />
@@ -167,17 +173,17 @@ const fetchAll = async () => {
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-4">
-        <StatCard icon={<Users className="text-blue-400" />} label="Total Users" value={stats.total_users} sub={`+${stats.new_users_week} this week`} />
-        <StatCard icon={<Activity className="text-green-400" />} label="Active Today" value={stats.active_today} />
-        <StatCard icon={<FileText className="text-purple-400" />} label="Documents" value={stats.total_documents} />
-        <StatCard icon={<MessageSquare className="text-yellow-400" />} label="Total Queries" value={stats.total_queries} sub={`${stats.queries_today} today`} />
+        <StatCard icon={<Users className="text-blue-400" />} label="Total Users" value={num(stats.total_users)} sub={`+${num(stats.new_users_week)} this week`} />
+        <StatCard icon={<Activity className="text-green-400" />} label="Active Today" value={num(stats.active_today)} />
+        <StatCard icon={<FileText className="text-purple-400" />} label="Documents" value={num(stats.total_documents)} />
+        <StatCard icon={<MessageSquare className="text-yellow-400" />} label="Total Queries" value={num(stats.total_queries)} sub={`${num(stats.queries_today)} today`} />
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-8">
-        <StatCard icon={<Clock className="text-blue-400" />} label="Avg Latency" value={`${stats.avg_latency_ms}ms`} />
-        <StatCard icon={<Zap className="text-green-400" />} label="Avg Confidence" value={`${Math.round(stats.avg_confidence * 100)}%`} />
-        <StatCard icon={<TrendingUp className="text-purple-400" />} label="High Confidence" value={stats.high_confidence_queries} sub={`${stats.total_queries > 0 ? Math.round(stats.high_confidence_queries / stats.total_queries * 100) : 0}% of queries`} />
-        <StatCard icon={<DollarSign className="text-yellow-400" />} label="Est. Cost" value={`$${stats.estimated_cost_usd}`} sub={`${(stats.estimated_tokens_used / 1000).toFixed(0)}K tokens`} />
+        <StatCard icon={<Clock className="text-blue-400" />} label="Avg Latency" value={`${num(stats.avg_latency_ms)}ms`} />
+        <StatCard icon={<Zap className="text-green-400" />} label="Avg Confidence" value={`${pct(stats.avg_confidence)}%`} />
+        <StatCard icon={<TrendingUp className="text-purple-400" />} label="High Confidence" value={num(stats.high_confidence_queries)} sub={num(stats.total_queries) > 0 ? `${Math.round(num(stats.high_confidence_queries) / num(stats.total_queries) * 100)}% of queries` : '0%'} />
+        <StatCard icon={<DollarSign className="text-yellow-400" />} label="Est. Cost" value={`$${num(stats.estimated_cost_usd).toFixed(4)}`} sub={`${(num(stats.estimated_tokens_used) / 1000).toFixed(0)}K tokens`} />
       </div>
 
       <div className="flex gap-2 mb-4 border-b border-gray-800">
@@ -196,75 +202,88 @@ const fetchAll = async () => {
         ))}
       </div>
 
-      {activeTab === 'overview' && analytics && (
+      {activeTab === 'overview' && (
         <div className="grid grid-cols-2 gap-6">
           <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
             <h3 className="font-semibold mb-4">User Growth (30 days)</h3>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={analytics.users_growth}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="date" stroke="#9CA3AF" style={{ fontSize: '10px' }} />
-                <YAxis stroke="#9CA3AF" />
-                <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} />
-                <Line type="monotone" dataKey="count" stroke="#3B82F6" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
+            {analytics.users_growth.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={analytics.users_growth}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="date" stroke="#9CA3AF" style={{ fontSize: '10px' }} />
+                  <YAxis stroke="#9CA3AF" />
+                  <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} />
+                  <Line type="monotone" dataKey="count" stroke="#3B82F6" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-gray-500 text-center py-8 text-sm">Not enough data yet</p>
+            )}
           </div>
 
           <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
             <h3 className="font-semibold mb-4">Query Growth (30 days)</h3>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={analytics.queries_growth}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="date" stroke="#9CA3AF" style={{ fontSize: '10px' }} />
-                <YAxis stroke="#9CA3AF" />
-                <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} />
-                <Line type="monotone" dataKey="count" stroke="#10B981" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
+            {analytics.queries_growth.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={analytics.queries_growth}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="date" stroke="#9CA3AF" style={{ fontSize: '10px' }} />
+                  <YAxis stroke="#9CA3AF" />
+                  <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} />
+                  <Line type="monotone" dataKey="count" stroke="#10B981" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-gray-500 text-center py-8 text-sm">Not enough data yet</p>
+            )}
           </div>
 
           <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
             <h3 className="font-semibold mb-4">Search Methods Used</h3>
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={analytics.search_distribution}
-                  dataKey="count"
-                  nameKey="search_type"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={70}
-                  label
-                >
-                  {analytics.search_distribution.map((_: any, i: number) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+            {analytics.search_distribution.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie
+                    data={analytics.search_distribution}
+                    dataKey="count"
+                    nameKey="search_type"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={70}
+                    label
+                  >
+                    {analytics.search_distribution.map((_: any, i: number) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-gray-500 text-center py-8 text-sm">No queries yet</p>
+            )}
           </div>
 
           <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
             <h3 className="font-semibold mb-4">Top Users by Queries</h3>
             <div className="space-y-3">
-              {analytics.top_users.map((u: any, i: number) => (
-                <div key={i} className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-sm font-bold">
-                      {i + 1}
+              {analytics.top_users.length > 0 ? (
+                analytics.top_users.map((u: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-sm font-bold">
+                        {i + 1}
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">{u.name || 'Unknown'}</p>
+                        <p className="text-xs text-gray-500">{u.email}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium text-sm">{u.name}</p>
-                      <p className="text-xs text-gray-500">{u.email}</p>
-                    </div>
+                    <span className="text-lg font-bold text-blue-400">{num(u.query_count)}</span>
                   </div>
-                  <span className="text-lg font-bold text-blue-400">{u.query_count}</span>
-                </div>
-              ))}
-              {analytics.top_users.length === 0 && (
+                ))
+              ) : (
                 <p className="text-center text-gray-500 py-4 text-sm">No user activity yet</p>
               )}
             </div>
@@ -291,7 +310,7 @@ const fetchAll = async () => {
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">User</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Docs</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Queries</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Avg Confidence</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Confidence</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Last Active</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
@@ -306,11 +325,11 @@ const fetchAll = async () => {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-sm font-bold">
-                          {u.name.charAt(0).toUpperCase()}
+                          {(u.name || 'U').charAt(0).toUpperCase()}
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-medium">{u.name}</span>
+                            <span className="font-medium">{u.name || 'Unknown'}</span>
                             {u.is_admin && (
                               <span className="text-xs bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded flex items-center gap-1">
                                 <Shield size={10} /> Admin
@@ -321,10 +340,10 @@ const fetchAll = async () => {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3">{u.doc_count}</td>
-                    <td className="px-4 py-3">{u.query_count}</td>
+                    <td className="px-4 py-3">{num(u.doc_count)}</td>
+                    <td className="px-4 py-3">{num(u.query_count)}</td>
                     <td className="px-4 py-3">
-                      {u.avg_confidence ? `${Math.round(u.avg_confidence * 100)}%` : '-'}
+                      {u.avg_confidence ? `${pct(u.avg_confidence)}%` : '-'}
                     </td>
                     <td className="px-4 py-3 text-gray-400 text-sm">
                       {u.last_activity ? new Date(u.last_activity).toLocaleDateString() : 'Never'}
@@ -364,24 +383,27 @@ const fetchAll = async () => {
 
       {activeTab === 'queries' && (
         <div className="space-y-3">
-          {queries.map(q => (
-            <div key={q.id} className="bg-gray-900 rounded-lg p-4 border border-gray-800">
-              <div className="flex items-start justify-between mb-2">
-                <p className="font-medium">{q.question}</p>
-                <span className="text-xs text-gray-500 flex-shrink-0 ml-3">
-                  {new Date(q.created_at).toLocaleString()}
-                </span>
+          {queries.length === 0 ? (
+            <p className="text-center text-gray-500 py-8">No queries yet</p>
+          ) : (
+            queries.map(q => (
+              <div key={q.id} className="bg-gray-900 rounded-lg p-4 border border-gray-800">
+                <div className="flex items-start justify-between mb-2">
+                  <p className="font-medium">{q.question}</p>
+                  <span className="text-xs text-gray-500 flex-shrink-0 ml-3">
+                    {new Date(q.created_at).toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-400 mb-3 line-clamp-2">{q.answer}</p>
+                <div className="flex gap-3 text-xs text-gray-500 flex-wrap">
+                  <span>👤 {q.user_name || 'Anonymous'}</span>
+                  <span>🎯 {pct(q.confidence_score)}%</span>
+                  <span>⏱️ {num(q.latency_ms)}ms</span>
+                  <span>🔍 {q.search_type}</span>
+                </div>
               </div>
-              <p className="text-sm text-gray-400 mb-3 line-clamp-2">{q.answer}</p>
-              <div className="flex gap-3 text-xs text-gray-500 flex-wrap">
-                <span>👤 {q.user_name || 'Anonymous'}</span>
-                <span>🎯 {Math.round(q.confidence_score * 100)}%</span>
-                <span>⏱️ {q.latency_ms}ms</span>
-                <span>🔍 {q.search_type}</span>
-                {q.chunking_strategy && <span>📄 {q.chunking_strategy}</span>}
-              </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       )}
 
@@ -394,10 +416,10 @@ const fetchAll = async () => {
             <div className="p-6 border-b border-gray-800 flex items-center justify-between sticky top-0 bg-gray-900">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-lg font-bold">
-                  {selectedUser.name.charAt(0).toUpperCase()}
+                  {(selectedUser.name || 'U').charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold">{selectedUser.name}</h3>
+                  <h3 className="text-xl font-bold">{selectedUser.name || 'Unknown'}</h3>
                   <p className="text-sm text-gray-400">{selectedUser.email}</p>
                 </div>
               </div>
@@ -410,30 +432,30 @@ const fetchAll = async () => {
               <div className="grid grid-cols-4 gap-3 mb-6">
                 <div className="bg-gray-800/50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-1">Documents</p>
-                  <p className="text-xl font-bold">{userDetails.documents.length}</p>
+                  <p className="text-xl font-bold">{userDetails.documents?.length || 0}</p>
                 </div>
                 <div className="bg-gray-800/50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-1">Queries</p>
-                  <p className="text-xl font-bold">{userDetails.stats.total_queries || 0}</p>
+                  <p className="text-xl font-bold">{num(userDetails.stats?.total_queries)}</p>
                 </div>
                 <div className="bg-gray-800/50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-1">Avg Confidence</p>
                   <p className="text-xl font-bold">
-                    {userDetails.stats.avg_confidence ? `${Math.round(userDetails.stats.avg_confidence * 100)}%` : '-'}
+                    {userDetails.stats?.avg_confidence ? `${pct(userDetails.stats.avg_confidence)}%` : '-'}
                   </p>
                 </div>
                 <div className="bg-gray-800/50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-1">Avg Latency</p>
                   <p className="text-xl font-bold">
-                    {userDetails.stats.avg_latency ? `${Math.round(userDetails.stats.avg_latency)}ms` : '-'}
+                    {userDetails.stats?.avg_latency ? `${Math.round(userDetails.stats.avg_latency)}ms` : '-'}
                   </p>
                 </div>
               </div>
 
               <div className="mb-6">
-                <h4 className="font-semibold mb-2 text-sm text-gray-400 uppercase">Documents ({userDetails.documents.length})</h4>
+                <h4 className="font-semibold mb-2 text-sm text-gray-400 uppercase">Documents ({userDetails.documents?.length || 0})</h4>
                 <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {userDetails.documents.map((d: any) => (
+                  {(userDetails.documents || []).map((d: any) => (
                     <div key={d.id} className="bg-gray-800/50 rounded p-3 text-sm">
                       <div className="flex justify-between">
                         <span className="font-medium">{d.filename}</span>
@@ -444,27 +466,27 @@ const fetchAll = async () => {
                       </p>
                     </div>
                   ))}
-                  {userDetails.documents.length === 0 && (
+                  {(!userDetails.documents || userDetails.documents.length === 0) && (
                     <p className="text-gray-500 text-sm">No documents uploaded</p>
                   )}
                 </div>
               </div>
 
               <div>
-                <h4 className="font-semibold mb-2 text-sm text-gray-400 uppercase">Recent Queries ({userDetails.queries.length})</h4>
+                <h4 className="font-semibold mb-2 text-sm text-gray-400 uppercase">Recent Queries ({userDetails.queries?.length || 0})</h4>
                 <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {userDetails.queries.map((q: any) => (
+                  {(userDetails.queries || []).map((q: any) => (
                     <div key={q.id} className="bg-gray-800/50 rounded p-3 text-sm">
                       <p className="font-medium mb-1">{q.question}</p>
                       <p className="text-xs text-gray-400 line-clamp-2 mb-1">{q.answer}</p>
                       <div className="flex gap-3 text-xs text-gray-500">
-                        <span>🎯 {Math.round(q.confidence_score * 100)}%</span>
-                        <span>⏱️ {q.latency_ms}ms</span>
+                        <span>🎯 {pct(q.confidence_score)}%</span>
+                        <span>⏱️ {num(q.latency_ms)}ms</span>
                         <span>🔍 {q.search_type}</span>
                       </div>
                     </div>
                   ))}
-                  {userDetails.queries.length === 0 && (
+                  {(!userDetails.queries || userDetails.queries.length === 0) && (
                     <p className="text-gray-500 text-sm">No queries yet</p>
                   )}
                 </div>
