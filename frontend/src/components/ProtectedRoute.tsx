@@ -10,6 +10,8 @@ interface Props {
 export default function ProtectedRoute({ children, adminOnly = false }: Props) {
   const { user, loading } = useAuth();
 
+  console.log('ProtectedRoute check:', { user, loading, adminOnly });
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-950">
@@ -19,10 +21,12 @@ export default function ProtectedRoute({ children, adminOnly = false }: Props) {
   }
 
   if (!user) {
+    console.log('No user, redirecting to login');
     return <Navigate to="/login" replace />;
   }
 
   if (adminOnly && !user.is_admin) {
+    console.log('Not admin, redirecting to home');
     return <Navigate to="/" replace />;
   }
 
