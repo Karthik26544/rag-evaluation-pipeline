@@ -19,12 +19,14 @@ interface Message {
   rewritten_question: string | null;
   latency_ms: number;
   chunks_found: number;
+  reranked: boolean;
 }
 
 export default function ChatPage() {
   const [question, setQuestion] = useState('');
   const [searchType, setSearchType] = useState('hybrid');
   const [useRewriting, setUseRewriting] = useState(true);
+  const [useReranker, setUseReranker] = useState(true);
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
 
@@ -37,11 +39,12 @@ export default function ChatPage() {
 
     try {
       const res = await axios.post(`${API}/queries/ask`, {
-        question: currentQuestion,
-        search_type: searchType,
-        use_query_rewriting: useRewriting,
-        top_k: 5,
-      });
+  question: currentQuestion,
+  search_type: searchType,
+  use_query_rewriting: useRewriting,
+  use_reranker: useReranker,
+  top_k: 5,
+});
 
       setMessages(prev => [res.data, ...prev]);
 } catch (err: any) {
@@ -84,17 +87,29 @@ export default function ChatPage() {
             </select>
           </div>
           <div className="flex items-end">
-            <label className="flex items-center gap-2 cursor-pointer bg-gray-800 px-4 py-2 rounded-lg border border-gray-700 hover:border-blue-500 transition">
-              <input
-                type="checkbox"
-                checked={useRewriting}
-                onChange={e => setUseRewriting(e.target.checked)}
-                className="w-4 h-4 accent-blue-500"
-              />
-              <Sparkles size={14} className="text-purple-400" />
-              <span className="text-sm text-gray-300">Query Rewriting</span>
-            </label>
-          </div>
+  <label className="flex items-center gap-2 cursor-pointer bg-gray-800 px-4 py-2 rounded-lg border border-gray-700 hover:border-blue-500 transition">
+    <input
+      type="checkbox"
+      checked={useRewriting}
+      onChange={e => setUseRewriting(e.target.checked)}
+      className="w-4 h-4 accent-blue-500"
+    />
+    <Sparkles size={14} className="text-purple-400" />
+    <span className="text-sm text-gray-300">Query Rewriting</span>
+  </label>
+</div>
+<div className="flex items-end">
+  <label className="flex items-center gap-2 cursor-pointer bg-gray-800 px-4 py-2 rounded-lg border border-gray-700 hover:border-blue-500 transition">
+    <input
+      type="checkbox"
+      checked={useReranker}
+      onChange={e => setUseReranker(e.target.checked)}
+      className="w-4 h-4 accent-yellow-500"
+    />
+    <span className="text-yellow-400">⚡</span>
+    <span className="text-sm text-gray-300">Reranker</span>
+  </label>
+</div>
         </div>
 
         <div className="flex gap-3">
@@ -153,10 +168,15 @@ export default function ChatPage() {
                 <Clock size={12} />
                 {msg.latency_ms}ms
               </div>
-              <div className="flex items-center gap-1 text-xs text-gray-500">
-                <Zap size={12} />
-                {msg.chunks_found} chunks found
-              </div>
+<div className="flex items-center gap-1 text-xs text-gray-500">
+  <Zap size={12} />
+  {msg.chunks_found} chunks found
+</div>
+{msg.reranked && (
+  <div className="flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-yellow-500/10 text-yellow-400">
+    ⚡ Reranked
+  </div>
+)}
             </div>
 
             <div className="bg-gray-800 rounded-lg p-4 mb-4">

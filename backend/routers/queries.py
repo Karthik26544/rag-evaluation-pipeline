@@ -13,6 +13,7 @@ from slowapi.util import get_remote_address
 from services.vector_store import VectorStore
 from services.hybrid_search import HybridSearch
 from services.query_processor import QueryProcessor
+from services.reranker import Reranker
 
 load_dotenv()
 
@@ -22,12 +23,14 @@ limiter = Limiter(key_func=get_remote_address)
 vector_store = VectorStore()
 hybrid_search = HybridSearch()
 query_processor = QueryProcessor()
+reranker = Reranker()
 
 class QueryRequest(BaseModel):
     question: str
     search_type: str = "hybrid"
     chunking_strategy: Optional[str] = None
     use_query_rewriting: bool = True
+    use_reranker: bool = True
     top_k: int = 5
 
 def get_db():
@@ -43,10 +46,12 @@ def ask_question(request: Request, req: QueryRequest):
     if req.use_query_rewriting:
         question = query_processor.rewrite_query(original_question)
 
+    initial_top_k = 20 if req.use_reranker else req.top_k
+
     if req.search_type == "vector":
         results = vector_store.search(
             question,
-            top_k=req.top_k,
+            top_k=initial_top_k,
             strategy_filter=req.chunking_strategy
         )
 
@@ -62,7 +67,7 @@ def ask_question(request: Request, req: QueryRequest):
         conn.close()
 
         hybrid_search.build_index(all_chunks)
-        results = hybrid_search.search(question, top_k=req.top_k)
+        results = hybrid_search.search(question, top_k=initial_top_k)
 
     elif req.search_type == "hybrid":
         vector_results = vector_store.search(
@@ -99,8 +104,16 @@ def ask_question(request: Request, req: QueryRequest):
             "rewritten_question": question,
             "latency_ms": 0,
             "search_type": req.search_type,
-            "chunks_found": 0
+            "chunks_found": 0,
+            "reranked": False
         }
+
+    reranked_flag = False
+    if req.use_reranker and len(results) > req.top_k:
+        results = reranker.rerank(question, results, top_k=req.top_k)
+        reranked_flag = reranker.enabled
+
+    results = results[:req.top_k]
 
     answer, confidence, latency = query_processor.generate_answer(
         question=question,
@@ -112,7 +125,7 @@ def ask_question(request: Request, req: QueryRequest):
         {
             "content": r["content"][:200],
             "document_id": r.get("document_id", ""),
-            "score": r.get("score", r.get("final_score", 0))
+            "score": r.get("rerank_score", r.get("score", r.get("final_score", 0)))
         }
         for r in results[:5]
     ]
@@ -148,7 +161,8 @@ def ask_question(request: Request, req: QueryRequest):
         "rewritten_question": question if req.use_query_rewriting else None,
         "latency_ms": latency,
         "search_type": req.search_type,
-        "chunks_found": len(results)
+        "chunks_found": len(results),
+        "reranked": reranked_flag
     }
 
 
