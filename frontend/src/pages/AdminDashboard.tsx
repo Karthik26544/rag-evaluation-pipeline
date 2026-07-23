@@ -30,20 +30,45 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const fetchAll = async () => {
+const fetchAll = async () => {
     try {
-      const [s, u, q, a] = await Promise.all([
+      const results = await Promise.allSettled([
         axios.get(`${API}/admin/stats`),
         axios.get(`${API}/admin/users`),
         axios.get(`${API}/admin/queries/recent`),
         axios.get(`${API}/admin/analytics/growth`),
       ]);
-      setStats(s.data);
-      setUsers(u.data.users);
-      setQueries(q.data.queries);
-      setAnalytics(a.data);
-    } catch (err) {
-      console.error(err);
+      
+      if (results[0].status === 'fulfilled') {
+        setStats(results[0].value.data);
+      } else {
+        console.error('Stats failed:', results[0].reason);
+        setStats({
+          total_users: 0, total_documents: 0, total_queries: 0,
+          total_evaluations: 0, new_users_week: 0, queries_today: 0,
+          avg_latency_ms: 0, avg_confidence: 0, active_today: 0,
+          high_confidence_queries: 0, estimated_tokens_used: 0, estimated_cost_usd: 0
+        });
+      }
+      
+      if (results[1].status === 'fulfilled') {
+        setUsers(results[1].value.data?.users || []);
+      }
+      
+      if (results[2].status === 'fulfilled') {
+        setQueries(results[2].value.data?.queries || []);
+      }
+      
+      if (results[3].status === 'fulfilled') {
+        setAnalytics(results[3].value.data);
+      } else {
+        setAnalytics({
+          users_growth: [], queries_growth: [],
+          search_distribution: [], chunking_distribution: [], top_users: []
+        });
+      }
+    } catch (err: any) {
+      console.error('Admin fetch error:', err);
     }
   };
 
