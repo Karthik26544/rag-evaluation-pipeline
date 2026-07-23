@@ -21,6 +21,28 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Set up axios interceptor once at module level
+axios.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Handle 401 responses globally
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      console.log('Got 401, clearing auth');
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    }
+    return Promise.reject(error);
+  }
+);
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -31,42 +53,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const savedUser = localStorage.getItem('user');
     
     if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
-      axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        setToken(savedToken);
+        setUser(parsedUser);
+        console.log('Loaded user from storage:', parsedUser);
+      } catch (e) {
+        console.error('Failed to parse saved user:', e);
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      }
     }
     
     setLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
-    const res = await axios.post(`${API}/auth/login`, { email, password });
+    const res = await axios.post(`${API}/auth/login`, { email, password }, { timeout: 120000 });
     const { token: newToken, user: newUser } = res.data;
+    
+    localStorage.setItem('token', newToken);
+    localStorage.setItem('user', JSON.stringify(newUser));
     
     setToken(newToken);
     setUser(newUser);
-    localStorage.setItem('token', newToken);
-    localStorage.setItem('user', JSON.stringify(newUser));
-    axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+    
+    console.log('Logged in:', newUser);
   };
 
   const register = async (name: string, email: string, password: string) => {
-    const res = await axios.post(`${API}/auth/register`, { name, email, password });
+    const res = await axios.post(`${API}/auth/register`, { name, email, password }, { timeout: 120000 });
     const { token: newToken, user: newUser } = res.data;
+    
+    localStorage.setItem('token', newToken);
+    localStorage.setItem('user', JSON.stringify(newUser));
     
     setToken(newToken);
     setUser(newUser);
-    localStorage.setItem('token', newToken);
-    localStorage.setItem('user', JSON.stringify(newUser));
-    axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+    
+    console.log('Registered:', newUser);
   };
 
   const logout = () => {
-    setToken(null);
-    setUser(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    delete axios.defaults.headers.common['Authorization'];
+    setToken(null);
+    setUser(null);
   };
 
   return (
