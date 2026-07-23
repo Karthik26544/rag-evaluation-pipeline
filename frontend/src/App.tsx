@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { Upload, MessageSquare, BarChart3, LayoutDashboard, LogOut, User, Award } from 'lucide-react';
+import { Upload, MessageSquare, BarChart3, LayoutDashboard, LogOut, Award } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import UploadPage from './pages/UploadPage';

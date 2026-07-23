@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { Users, FileText, MessageSquare, Zap, TrendingUp, Clock, Award, Trash2 } from 'lucide-react';
