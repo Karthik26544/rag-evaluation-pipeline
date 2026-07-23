@@ -1,4 +1,8 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 import os
 import uuid
 import psycopg2
@@ -19,7 +23,9 @@ def get_db():
     return conn
 
 @router.post("/upload")
+@limiter.limit("5/minute")
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     chunking_strategy: str = Form(default="recursive")
 ):

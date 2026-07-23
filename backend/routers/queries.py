@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 import psycopg2
@@ -7,6 +7,8 @@ import os
 import uuid
 import json
 from dotenv import load_dotenv
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from services.vector_store import VectorStore
 from services.hybrid_search import HybridSearch
@@ -15,6 +17,8 @@ from services.query_processor import QueryProcessor
 load_dotenv()
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
+
 vector_store = VectorStore()
 hybrid_search = HybridSearch()
 query_processor = QueryProcessor()
@@ -31,21 +35,22 @@ def get_db():
     return conn
 
 @router.post("/ask")
-def ask_question(request: QueryRequest):
-    original_question = request.question
+@limiter.limit("10/minute")
+def ask_question(request: Request, req: QueryRequest):
+    original_question = req.question
     question = original_question
 
-    if request.use_query_rewriting:
+    if req.use_query_rewriting:
         question = query_processor.rewrite_query(original_question)
 
-    if request.search_type == "vector":
+    if req.search_type == "vector":
         results = vector_store.search(
             question,
-            top_k=request.top_k,
-            strategy_filter=request.chunking_strategy
+            top_k=req.top_k,
+            strategy_filter=req.chunking_strategy
         )
 
-    elif request.search_type == "bm25":
+    elif req.search_type == "bm25":
         conn = get_db()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("""
@@ -57,13 +62,13 @@ def ask_question(request: QueryRequest):
         conn.close()
 
         hybrid_search.build_index(all_chunks)
-        results = hybrid_search.search(question, top_k=request.top_k)
+        results = hybrid_search.search(question, top_k=req.top_k)
 
-    elif request.search_type == "hybrid":
+    elif req.search_type == "hybrid":
         vector_results = vector_store.search(
             question,
             top_k=20,
-            strategy_filter=request.chunking_strategy
+            strategy_filter=req.chunking_strategy
         )
 
         conn = get_db()
@@ -93,7 +98,7 @@ def ask_question(request: QueryRequest):
             "confidence": 0.0,
             "rewritten_question": question,
             "latency_ms": 0,
-            "search_type": request.search_type,
+            "search_type": req.search_type,
             "chunks_found": 0
         }
 
@@ -126,8 +131,8 @@ def ask_question(request: QueryRequest):
         question,
         answer,
         json.dumps(sources),
-        request.search_type,
-        request.chunking_strategy,
+        req.search_type,
+        req.chunking_strategy,
         latency,
         confidence
     ))
@@ -140,9 +145,9 @@ def ask_question(request: QueryRequest):
         "answer": answer,
         "sources": sources,
         "confidence": confidence,
-        "rewritten_question": question if request.use_query_rewriting else None,
+        "rewritten_question": question if req.use_query_rewriting else None,
         "latency_ms": latency,
-        "search_type": request.search_type,
+        "search_type": req.search_type,
         "chunks_found": len(results)
     }
 
