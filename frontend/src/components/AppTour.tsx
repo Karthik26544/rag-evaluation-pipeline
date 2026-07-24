@@ -1,7 +1,6 @@
-import React, { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { driver } from 'driver.js';
 import 'driver.js/dist/driver.css';
-import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const TOUR_STORAGE_KEY = 'rag_tour_completed';
@@ -12,22 +11,11 @@ interface Props {
 }
 
 export default function AppTour({ forceStart = false, onComplete }: Props) {
-  const location = useLocation();
-  const navigate = useNavigate();
   const { user } = useAuth();
 
-  useEffect(() => {
-    const tourCompleted = localStorage.getItem(TOUR_STORAGE_KEY);
-    
+  const startTour = useCallback(() => {
     if (!user) return;
-    if (!forceStart && tourCompleted === 'true') return;
-    
-    setTimeout(() => {
-      startTour();
-    }, 500);
-  }, [forceStart, user]);
 
-  const startTour = () => {
     const driverObj = driver({
       showProgress: true,
       animate: true,
@@ -108,7 +96,7 @@ export default function AppTour({ forceStart = false, onComplete }: Props) {
           element: 'nav button[title="Logout"]',
           popover: {
             title: '🎉 You are all set!',
-            description: `Great job! Start by uploading a document, then ask questions. Your Gemini API is rate-limited (10 queries/min), and answers are cached to save resources. Click "Finish Tour" to begin!`,
+            description: 'Great job! Start by uploading a document, then ask questions. Your Gemini API is rate-limited (10 queries/min), and answers are cached to save resources. Click "Finish Tour" to begin!',
             side: 'bottom',
             align: 'end',
           }
@@ -117,7 +105,20 @@ export default function AppTour({ forceStart = false, onComplete }: Props) {
     });
 
     driverObj.drive();
-  };
+  }, [user, onComplete]);
+
+  useEffect(() => {
+    const tourCompleted = localStorage.getItem(TOUR_STORAGE_KEY);
+    
+    if (!user) return;
+    if (!forceStart && tourCompleted === 'true') return;
+    
+    const timer = setTimeout(() => {
+      startTour();
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, [forceStart, user, startTour]);
 
   return null;
 }
