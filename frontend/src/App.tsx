@@ -1,8 +1,7 @@
-// Deployment fix: removed unused imports
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { Upload, MessageSquare, BarChart3, LayoutDashboard, LogOut, Award } from 'lucide-react';
+import { Upload, MessageSquare, BarChart3, LayoutDashboard, LogOut, Award, History } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import UploadPage from './pages/UploadPage';
@@ -12,6 +11,7 @@ import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AdminDashboard from './pages/AdminDashboard';
+import HistoryPage from './pages/HistoryPage';
 
 function Navigation() {
   const location = useLocation();
@@ -22,6 +22,7 @@ function Navigation() {
   const links = [
     { path: '/', label: 'Upload', icon: Upload },
     { path: '/chat', label: 'Ask', icon: MessageSquare },
+    { path: '/history', label: 'History', icon: History },
     { path: '/evaluate', label: 'Evaluate', icon: BarChart3 },
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
@@ -91,6 +92,7 @@ function AppContent() {
         
         <Route path="/" element={<ProtectedRoute><UploadPage /></ProtectedRoute>} />
         <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+        <Route path="/history" element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
         <Route path="/evaluate" element={<ProtectedRoute><EvaluationPage /></ProtectedRoute>} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />

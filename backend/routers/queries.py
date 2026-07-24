@@ -1,3 +1,4 @@
+from fastapi import Depends
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
@@ -6,6 +7,7 @@ from psycopg2.extras import RealDictCursor
 import os
 import uuid
 import json
+
 from dotenv import load_dotenv
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -14,6 +16,8 @@ from services.vector_store import VectorStore
 from services.hybrid_search import HybridSearch
 from services.query_processor import QueryProcessor
 from services.reranker import Reranker
+from services.cache_service import CacheService
+from services.auth_middleware import get_optional_user
 
 load_dotenv()
 
@@ -24,6 +28,7 @@ vector_store = VectorStore()
 hybrid_search = HybridSearch()
 query_processor = QueryProcessor()
 reranker = Reranker()
+cache_service = CacheService()
 
 class QueryRequest(BaseModel):
     question: str
@@ -31,6 +36,7 @@ class QueryRequest(BaseModel):
     chunking_strategy: Optional[str] = None
     use_query_rewriting: bool = True
     use_reranker: bool = True
+    use_cache: bool = True
     top_k: int = 5
 
 def get_db():
@@ -39,8 +45,51 @@ def get_db():
 
 @router.post("/ask")
 @limiter.limit("10/minute")
-def ask_question(request: Request, req: QueryRequest):
+def ask_question(request: Request, req: QueryRequest, user: dict = None):
+    from fastapi import Depends
     original_question = req.question
+    
+    user_id = None
+    try:
+        from services.auth_middleware import get_current_user
+        from fastapi.security import HTTPBearer
+        security = HTTPBearer(auto_error=False)
+        credentials = security(request)
+        if credentials:
+            from services.auth_service import decode_token
+            payload = decode_token(credentials.credentials)
+            if payload:
+                user_id = payload.get("user_id")
+    except:
+        pass
+    
+    if req.use_cache:
+        cached = cache_service.get(original_question, req.search_type)
+        if cached:
+            _save_query_to_db(
+                user_id=user_id,
+                original_question=original_question,
+                rewritten_question=original_question,
+                answer=cached["answer"],
+                sources=cached["sources"],
+                search_type=req.search_type,
+                chunking_strategy=req.chunking_strategy,
+                latency_ms=50,
+                confidence=cached["confidence"]
+            )
+            return {
+                "answer": cached["answer"],
+                "sources": cached["sources"] if isinstance(cached["sources"], list) else [],
+                "confidence": cached["confidence"],
+                "rewritten_question": None,
+                "latency_ms": 50,
+                "search_type": req.search_type,
+                "chunks_found": len(cached["sources"]) if isinstance(cached["sources"], list) else 0,
+                "reranked": False,
+                "cached": True,
+                "cache_hit_count": cached.get("hit_count", 1)
+            }
+    
     question = original_question
 
     if req.use_query_rewriting:
@@ -93,7 +142,7 @@ def ask_question(request: Request, req: QueryRequest):
     else:
         raise HTTPException(
             status_code=400,
-            detail="Invalid search_type. Use vector, bm25, or hybrid"
+            detail="Invalid search_type"
         )
 
     if not results:
@@ -105,7 +154,8 @@ def ask_question(request: Request, req: QueryRequest):
             "latency_ms": 0,
             "search_type": req.search_type,
             "chunks_found": 0,
-            "reranked": False
+            "reranked": False,
+            "cached": False
         }
 
     reranked_flag = False
@@ -130,29 +180,26 @@ def ask_question(request: Request, req: QueryRequest):
         for r in results[:5]
     ]
 
-    conn = get_db()
-    cursor = conn.cursor()
+    if req.use_cache and confidence > 0.5:
+        cache_service.set(
+            question=original_question,
+            answer=answer,
+            sources=sources,
+            confidence=confidence,
+            search_type=req.search_type
+        )
 
-    cursor.execute("""
-        INSERT INTO queries 
-        (id, question, rewritten_question, answer, sources, 
-         search_type, chunking_strategy, latency_ms, confidence_score)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """, (
-        str(uuid.uuid4()),
-        original_question,
-        question,
-        answer,
-        json.dumps(sources),
-        req.search_type,
-        req.chunking_strategy,
-        latency,
-        confidence
-    ))
-
-    conn.commit()
-    cursor.close()
-    conn.close()
+    _save_query_to_db(
+        user_id=user_id,
+        original_question=original_question,
+        rewritten_question=question,
+        answer=answer,
+        sources=sources,
+        search_type=req.search_type,
+        chunking_strategy=req.chunking_strategy,
+        latency_ms=latency,
+        confidence=confidence
+    )
 
     return {
         "answer": answer,
@@ -162,8 +209,39 @@ def ask_question(request: Request, req: QueryRequest):
         "latency_ms": latency,
         "search_type": req.search_type,
         "chunks_found": len(results),
-        "reranked": reranked_flag
+        "reranked": reranked_flag,
+        "cached": False
     }
+
+
+def _save_query_to_db(user_id, original_question, rewritten_question, answer, sources, search_type, chunking_strategy, latency_ms, confidence):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO queries 
+            (id, user_id, question, rewritten_question, answer, sources, 
+             search_type, chunking_strategy, latency_ms, confidence_score)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            str(uuid.uuid4()),
+            user_id,
+            original_question,
+            rewritten_question,
+            answer,
+            json.dumps(sources),
+            search_type,
+            chunking_strategy,
+            latency_ms,
+            confidence
+        ))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Save query error: {e}")
 
 
 @router.get("/history")
@@ -184,3 +262,37 @@ def get_query_history():
     conn.close()
 
     return {"queries": [dict(q) for q in queries]}
+
+from fastapi import Depends
+from services.auth_middleware import get_current_user
+
+@router.get("/my-history")
+def get_my_history(user: dict = Depends(get_current_user)):
+    conn = get_db()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    cursor.execute("""
+        SELECT id, question, answer, confidence_score, 
+               latency_ms, search_type, sources, created_at
+        FROM queries
+        WHERE user_id = %s
+        ORDER BY created_at DESC
+        LIMIT 100
+    """, (user["id"],))
+
+    queries = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    return {"queries": [dict(q) for q in queries]}
+
+
+@router.delete("/my-history/{query_id}")
+def delete_my_query(query_id: str, user: dict = Depends(get_current_user)):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM queries WHERE id = %s AND user_id = %s", (query_id, user["id"]))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"success": True}

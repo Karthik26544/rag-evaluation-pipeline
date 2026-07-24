@@ -20,6 +20,8 @@ interface Message {
   latency_ms: number;
   chunks_found: number;
   reranked: boolean;
+  cached?: boolean;
+  cache_hit_count?: number;
 }
 
 export default function ChatPage() {
@@ -175,6 +177,11 @@ export default function ChatPage() {
 {msg.reranked && (
   <div className="flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-yellow-500/10 text-yellow-400">
     ⚡ Reranked
+  </div>
+)}
+{msg.cached && (
+  <div className="flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-green-500/10 text-green-400">
+    💾 Cached ({msg.cache_hit_count || 1}x)
   </div>
 )}
             </div>
