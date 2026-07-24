@@ -47,20 +47,44 @@ def get_platform_stats(admin: dict = Depends(get_current_admin)):
     cursor.execute("SELECT AVG(confidence_score) as avg FROM queries WHERE confidence_score > 0")
     avg_confidence = cursor.fetchone()["avg"] or 0
     
-    cursor.execute("""
-        SELECT COUNT(*) as total FROM users 
-        WHERE last_login > NOW() - INTERVAL '24 hours'
-    """)
+    cursor.execute("SELECT COUNT(*) as total FROM users WHERE last_login > NOW() - INTERVAL '24 hours'")
     active_today = cursor.fetchone()["total"]
     
-    cursor.execute("""
-        SELECT COUNT(*) as total FROM queries 
-        WHERE confidence_score > 0.7
-    """)
+    cursor.execute("SELECT COUNT(*) as total FROM queries WHERE confidence_score > 0.7")
     high_confidence = cursor.fetchone()["total"]
+    
+    # Cache stats
+    cache_stats = {}
+    try:
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as cache_entries,
+                COALESCE(SUM(hit_count), 0) as total_hits,
+                COALESCE(SUM(hit_count) - COUNT(*), 0) as api_calls_saved
+            FROM query_cache
+        """)
+        cache_stats = dict(cursor.fetchone())
+    except:
+        cache_stats = {"cache_entries": 0, "total_hits": 0, "api_calls_saved": 0}
+    
+    # Feedback stats  
+    feedback_stats = {}
+    try:
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_feedback,
+                COALESCE(AVG(rating), 0) as avg_rating
+            FROM feedback
+        """)
+        feedback_stats = dict(cursor.fetchone())
+    except:
+        feedback_stats = {"total_feedback": 0, "avg_rating": 0}
     
     total_tokens_estimate = total_queries * 500
     total_cost_estimate = round(total_tokens_estimate / 1000000 * 0.075, 4)
+    
+    # Estimate savings from cache
+    cost_saved = round(int(cache_stats.get("api_calls_saved", 0)) * 500 / 1000000 * 0.075, 4)
     
     cursor.close()
     conn.close()
@@ -77,7 +101,13 @@ def get_platform_stats(admin: dict = Depends(get_current_admin)):
         "active_today": active_today,
         "high_confidence_queries": high_confidence,
         "estimated_tokens_used": total_tokens_estimate,
-        "estimated_cost_usd": total_cost_estimate
+        "estimated_cost_usd": total_cost_estimate,
+        "cache_entries": int(cache_stats.get("cache_entries", 0)),
+        "cache_hits": int(cache_stats.get("total_hits", 0)),
+        "api_calls_saved": int(cache_stats.get("api_calls_saved", 0)),
+        "cost_saved_usd": cost_saved,
+        "total_feedback": int(feedback_stats.get("total_feedback", 0)),
+        "avg_rating": round(float(feedback_stats.get("avg_rating", 0)), 1)
     }
 
 
@@ -134,11 +164,7 @@ def get_user_details(user_id: str, admin: dict = Depends(get_current_admin)):
         SELECT 
             COUNT(*) as total_queries,
             AVG(confidence_score) as avg_confidence,
-            AVG(latency_ms) as avg_latency,
-            SUM(CASE WHEN confidence_score > 0.7 THEN 1 ELSE 0 END) as high_confidence_count,
-            SUM(CASE WHEN search_type = 'hybrid' THEN 1 ELSE 0 END) as hybrid_count,
-            SUM(CASE WHEN search_type = 'vector' THEN 1 ELSE 0 END) as vector_count,
-            SUM(CASE WHEN search_type = 'bm25' THEN 1 ELSE 0 END) as bm25_count
+            AVG(latency_ms) as avg_latency
         FROM queries WHERE user_id = %s
     """, (user_id,))
     stats = cursor.fetchone()
@@ -206,14 +232,11 @@ def get_growth_analytics(admin: dict = Depends(get_current_admin)):
     search_distribution = cursor.fetchall()
     
     cursor.execute("""
-        SELECT 
-            u.name, u.email,
-            COUNT(q.id) as query_count
+        SELECT u.name, u.email, COUNT(q.id) as query_count
         FROM users u
         LEFT JOIN queries q ON q.user_id = u.id
         GROUP BY u.id, u.name, u.email
-        ORDER BY query_count DESC
-        LIMIT 5
+        ORDER BY query_count DESC LIMIT 5
     """)
     top_users = cursor.fetchall()
     
@@ -225,6 +248,47 @@ def get_growth_analytics(admin: dict = Depends(get_current_admin)):
     """)
     chunking_distribution = cursor.fetchall()
     
+    # Rating distribution
+    rating_distribution = []
+    try:
+        cursor.execute("""
+            SELECT rating, COUNT(*) as count 
+            FROM feedback GROUP BY rating ORDER BY rating
+        """)
+        rating_distribution = [dict(r) for r in cursor.fetchall()]
+    except:
+        pass
+    
+    # Top cached queries
+    top_cached = []
+    try:
+        cursor.execute("""
+            SELECT question, hit_count, confidence, search_type
+            FROM query_cache
+            ORDER BY hit_count DESC LIMIT 10
+        """)
+        top_cached = [dict(r) for r in cursor.fetchall()]
+    except:
+        pass
+    
+    # Activity feed - recent events
+    activity_feed = []
+    try:
+        cursor.execute("""
+            (SELECT 'user_registered' as type, name as detail, created_at as time, email as extra
+             FROM users ORDER BY created_at DESC LIMIT 5)
+            UNION ALL
+            (SELECT 'query_asked' as type, LEFT(question, 60) as detail, created_at as time, '' as extra
+             FROM queries ORDER BY created_at DESC LIMIT 5)
+            UNION ALL  
+            (SELECT 'document_uploaded' as type, filename as detail, upload_time as time, chunking_strategy as extra
+             FROM documents ORDER BY upload_time DESC LIMIT 5)
+            ORDER BY time DESC LIMIT 15
+        """)
+        activity_feed = [dict(r) for r in cursor.fetchall()]
+    except:
+        pass
+    
     cursor.close()
     conn.close()
     
@@ -233,7 +297,10 @@ def get_growth_analytics(admin: dict = Depends(get_current_admin)):
         "queries_growth": [{"date": str(q["date"]), "count": q["count"]} for q in queries_growth],
         "search_distribution": [dict(s) for s in search_distribution],
         "chunking_distribution": [dict(c) for c in chunking_distribution],
-        "top_users": [dict(u) for u in top_users]
+        "top_users": [dict(u) for u in top_users],
+        "rating_distribution": rating_distribution,
+        "top_cached_queries": top_cached,
+        "activity_feed": [{"type": a["type"], "detail": a["detail"], "time": str(a["time"]), "extra": a["extra"]} for a in activity_feed]
     }
 
 
@@ -241,7 +308,6 @@ def get_growth_analytics(admin: dict = Depends(get_current_admin)):
 def export_users(admin: dict = Depends(get_current_admin)):
     conn = get_db()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
     cursor.execute("""
         SELECT 
             u.name, u.email, u.is_admin, u.created_at, u.last_login,
@@ -256,33 +322,22 @@ def export_users(admin: dict = Depends(get_current_admin)):
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Name", "Email", "Admin", "Created", "Last Login", "Documents", "Queries"])
-    
     for u in users:
-        writer.writerow([
-            u["name"], u["email"], u["is_admin"],
-            u["created_at"], u["last_login"] or "Never",
-            u["doc_count"], u["query_count"]
-        ])
+        writer.writerow([u["name"], u["email"], u["is_admin"], u["created_at"], u["last_login"] or "Never", u["doc_count"], u["query_count"]])
     
-    return Response(
-        content=output.getvalue(),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=users_{datetime.now().strftime('%Y%m%d')}.csv"}
-    )
+    return Response(content=output.getvalue(), media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=users_{datetime.now().strftime('%Y%m%d')}.csv"})
 
 
 @router.get("/export/queries")
 def export_queries(admin: dict = Depends(get_current_admin)):
     conn = get_db()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
     cursor.execute("""
-        SELECT 
-            u.name as user_name, u.email as user_email,
+        SELECT u.name as user_name, u.email as user_email,
             q.question, q.answer, q.confidence_score, q.latency_ms,
             q.search_type, q.chunking_strategy, q.created_at
-        FROM queries q
-        LEFT JOIN users u ON q.user_id = u.id
+        FROM queries q LEFT JOIN users u ON q.user_id = u.id
         ORDER BY q.created_at DESC
     """)
     queries = cursor.fetchall()
@@ -292,39 +347,25 @@ def export_queries(admin: dict = Depends(get_current_admin)):
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["User", "Email", "Question", "Answer", "Confidence", "Latency (ms)", "Search Type", "Chunking", "Created"])
-    
     for q in queries:
-        writer.writerow([
-            q["user_name"] or "Anonymous",
-            q["user_email"] or "N/A",
-            q["question"][:200],
-            (q["answer"] or "")[:500],
-            q["confidence_score"],
-            q["latency_ms"],
-            q["search_type"],
-            q["chunking_strategy"] or "N/A",
-            q["created_at"]
-        ])
+        writer.writerow([q["user_name"] or "Anonymous", q["user_email"] or "N/A",
+            q["question"][:200], (q["answer"] or "")[:500], q["confidence_score"],
+            q["latency_ms"], q["search_type"], q["chunking_strategy"] or "N/A", q["created_at"]])
     
-    return Response(
-        content=output.getvalue(),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=queries_{datetime.now().strftime('%Y%m%d')}.csv"}
-    )
+    return Response(content=output.getvalue(), media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=queries_{datetime.now().strftime('%Y%m%d')}.csv"})
 
 
 @router.delete("/users/{user_id}")
 def delete_user(user_id: str, admin: dict = Depends(get_current_admin)):
     if str(admin["id"]) == user_id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
-    
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
     conn.commit()
     cursor.close()
     conn.close()
-    
     return {"success": True, "message": "User deleted"}
 
 
@@ -332,12 +373,26 @@ def delete_user(user_id: str, admin: dict = Depends(get_current_admin)):
 def toggle_admin(user_id: str, admin: dict = Depends(get_current_admin)):
     if str(admin["id"]) == user_id:
         raise HTTPException(status_code=400, detail="Cannot change your own admin status")
-    
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("UPDATE users SET is_admin = NOT is_admin WHERE id = %s", (user_id,))
     conn.commit()
     cursor.close()
     conn.close()
-    
     return {"success": True, "message": "Admin status toggled"}
+
+
+@router.post("/cache/clear")
+def clear_cache(admin: dict = Depends(get_current_admin)):
+    """Clear all cached queries"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM query_cache")
+        deleted = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"success": True, "deleted": deleted}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
