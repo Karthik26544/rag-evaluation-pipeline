@@ -6,7 +6,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import uvicorn
 
-from routers import documents, queries, evaluation, auth, admin
+from routers import documents, queries, evaluation, auth, admin, feedback
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -38,6 +38,7 @@ app.include_router(queries.router, prefix="/api/queries", tags=["queries"])
 app.include_router(evaluation.router, prefix="/api/evaluation", tags=["evaluation"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(feedback.router, prefix="/api/feedback", tags=["feedback"])
 
 @app.get("/")
 def root():

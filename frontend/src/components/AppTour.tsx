@@ -33,7 +33,7 @@ export default function AppTour({ forceStart = false, onComplete }: Props) {
           element: 'nav',
           popover: {
             title: '👋 Welcome to RAG Pipeline!',
-            description: `Hi ${user?.name}! Let me walk you through this AI-powered document Q&A system. This tour has 8 quick steps.`,
+description: `Hi ${user?.name}! Let me walk you through this AI-powered document Q&A system. This tour has 10 quick steps.`,
             side: 'bottom',
             align: 'center',
           }
@@ -83,15 +83,33 @@ export default function AppTour({ forceStart = false, onComplete }: Props) {
             align: 'start',
           }
         },
-        ...(user?.is_admin ? [{
+...(user?.is_admin ? [{
           element: 'a[href="/admin"]',
           popover: {
             title: '👑 Admin Panel (Admin Only)',
-            description: 'Since you are an admin, you have access to user management, platform analytics, cost tracking, and CSV data export.',
+            description: 'Since you are an admin, you have access to user management, platform analytics, cost tracking, feedback review, and CSV data export.',
             side: 'bottom' as const,
             align: 'start' as const,
           }
         }] : []),
+        {
+          element: '#feedback-btn',
+          popover: {
+            title: '💬 Share Your Feedback',
+            description: 'Love the app? Have suggestions? Click this button anytime to rate your experience and send feedback. Your input helps us improve!',
+            side: 'bottom',
+            align: 'end',
+          }
+        },
+        {
+          element: '#tour-btn',
+          popover: {
+            title: '❓ Need a Refresher?',
+            description: 'Click this help button anytime to restart this tour and see all features again.',
+            side: 'bottom',
+            align: 'end',
+          }
+        },
         {
           element: 'nav button[title="Logout"]',
           popover: {

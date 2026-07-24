@@ -35,7 +35,9 @@ export default function AdminDashboard() {
   const [queries, setQueries] = useState<any[]>([]);
   const [analytics, setAnalytics] = useState<any>(defaultAnalytics);
   const [loaded, setLoaded] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+const [activeTab, setActiveTab] = useState('overview');
+const [feedbackList, setFeedbackList] = useState<any[]>([]);
+const [feedbackStats, setFeedbackStats] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userDetails, setUserDetails] = useState<any>(null);
@@ -46,13 +48,15 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const fetchAll = async () => {
+const fetchAll = async () => {
     try {
       const results = await Promise.allSettled([
         axios.get(`${API}/admin/stats`),
         axios.get(`${API}/admin/users`),
         axios.get(`${API}/admin/queries/recent`),
         axios.get(`${API}/admin/analytics/growth`),
+        axios.get(`${API}/feedback/all`),
+        axios.get(`${API}/feedback/stats`),
       ]);
       
       if (results[0].status === 'fulfilled') {
@@ -64,8 +68,14 @@ export default function AdminDashboard() {
       if (results[2].status === 'fulfilled') {
         setQueries(results[2].value.data?.queries || []);
       }
-      if (results[3].status === 'fulfilled') {
+if (results[3].status === 'fulfilled') {
         setAnalytics({ ...defaultAnalytics, ...results[3].value.data });
+      }
+      if (results[4] && results[4].status === 'fulfilled') {
+        setFeedbackList(results[4].value.data?.feedback || []);
+      }
+      if (results[5] && results[5].status === 'fulfilled') {
+        setFeedbackStats(results[5].value.data || {});
       }
       
       setLoaded(true);
@@ -187,7 +197,7 @@ export default function AdminDashboard() {
       </div>
 
       <div className="flex gap-2 mb-4 border-b border-gray-800">
-        {['overview', 'users', 'queries'].map(tab => (
+{['overview', 'users', 'queries', 'feedback'].map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -381,7 +391,70 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {activeTab === 'queries' && (
+{activeTab === 'feedback' && (
+        <div>
+          {feedbackStats && feedbackStats.total_feedback > 0 && (
+            <div className="grid grid-cols-4 gap-4 mb-6">
+              <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+                <p className="text-sm text-gray-400 mb-1">Total Feedback</p>
+                <p className="text-2xl font-bold">{feedbackStats.total_feedback}</p>
+              </div>
+              <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+                <p className="text-sm text-gray-400 mb-1">Average Rating</p>
+                <p className="text-2xl font-bold text-yellow-400">
+                  ⭐ {parseFloat(feedbackStats.avg_rating).toFixed(1)}
+                </p>
+              </div>
+              <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+                <p className="text-sm text-gray-400 mb-1">5-Star Reviews</p>
+                <p className="text-2xl font-bold text-green-400">{feedbackStats.five_star}</p>
+              </div>
+              <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+                <p className="text-sm text-gray-400 mb-1">Needs Attention</p>
+                <p className="text-2xl font-bold text-red-400">
+                  {feedbackStats.one_star + feedbackStats.two_star}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {feedbackList.length === 0 ? (
+              <p className="text-center text-gray-500 py-8">No feedback yet</p>
+            ) : (
+              feedbackList.map((f: any) => (
+                <div key={f.id} className="bg-gray-900 rounded-lg p-4 border border-gray-800">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-sm font-bold">
+                        {(f.user_name || 'U').charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-medium">{f.user_name || 'Anonymous'}</p>
+                        <p className="text-xs text-gray-500">{f.user_email}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-yellow-400">
+                        {'⭐'.repeat(f.rating)}
+                      </div>
+                      <span className="text-xs px-2 py-1 rounded-full bg-blue-500/10 text-blue-400">
+                        {f.category}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {new Date(f.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  {f.comment && (
+                    <p className="text-sm text-gray-300 mt-2 pl-13">{f.comment}</p>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
         <div className="space-y-3">
           {queries.length === 0 ? (
             <p className="text-center text-gray-500 py-8">No queries yet</p>

@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { Upload, MessageSquare, BarChart3, LayoutDashboard, LogOut, Award, History, HelpCircle } from 'lucide-react';
+import { Upload, MessageSquare, BarChart3, LayoutDashboard, LogOut, Award, History, HelpCircle, MessageCircle } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import UploadPage from './pages/UploadPage';
@@ -13,10 +13,12 @@ import RegisterPage from './pages/RegisterPage';
 import AdminDashboard from './pages/AdminDashboard';
 import HistoryPage from './pages/HistoryPage';
 import AppTour, { startTourManually } from './components/AppTour';
+import FeedbackModal from './components/FeedbackModal';
 
 function Navigation() {
   const location = useLocation();
   const { user, logout } = useAuth();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   if (!user) return null;
 
@@ -33,60 +35,72 @@ function Navigation() {
   }
 
   return (
-    <nav className="bg-gray-900 border-b border-gray-800 px-6 py-4 sticky top-0 z-50">
-      <div className="max-w-6xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold">R</span>
-          </div>
-          <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-            RAG Pipeline
-          </h1>
-        </div>
-        
-        <div className="flex items-center gap-1">
-          {links.map(link => {
-            const Icon = link.icon;
-            const active = location.pathname === link.path;
-            return (
-              <Link
-                key={link.path}
-                to={link.path}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition ${
-                  active
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                }`}
-              >
-                <Icon size={14} />
-                <span className="text-sm">{link.label}</span>
-              </Link>
-            );
-          })}
-          
-          <div className="ml-4 flex items-center gap-2 border-l border-gray-800 pl-4">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-sm font-bold">
-              {user.name.charAt(0).toUpperCase()}
+    <>
+      <nav className="bg-gray-900 border-b border-gray-800 px-6 py-4 sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold">R</span>
             </div>
-            <span className="text-sm text-gray-300">{user.name}</span>
-            <button
-              onClick={startTourManually}
-              className="p-2 text-gray-400 hover:text-blue-400 transition"
-              title="Start Tour"
-            >
-              <HelpCircle size={16} />
-            </button>
-            <button
-              onClick={logout}
-              className="p-2 text-gray-400 hover:text-red-400 transition"
-              title="Logout"
-            >
-              <LogOut size={16} />
-            </button>
+            <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              RAG Pipeline
+            </h1>
+          </div>
+          
+          <div className="flex items-center gap-1">
+            {links.map(link => {
+              const Icon = link.icon;
+              const active = location.pathname === link.path;
+              return (
+                <Link
+                  key={link.path}
+                  to={link.path}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition ${
+                    active
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  }`}
+                >
+                  <Icon size={14} />
+                  <span className="text-sm">{link.label}</span>
+                </Link>
+              );
+            })}
+            
+            <div className="ml-4 flex items-center gap-2 border-l border-gray-800 pl-4">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-sm font-bold">
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+              <span className="text-sm text-gray-300">{user.name}</span>
+              <button
+                onClick={() => setFeedbackOpen(true)}
+                className="p-2 text-gray-400 hover:text-yellow-400 transition"
+                title="Send Feedback"
+                id="feedback-btn"
+              >
+                <MessageCircle size={16} />
+              </button>
+              <button
+                onClick={startTourManually}
+                className="p-2 text-gray-400 hover:text-blue-400 transition"
+                title="Start Tour"
+                id="tour-btn"
+              >
+                <HelpCircle size={16} />
+              </button>
+              <button
+                onClick={logout}
+                className="p-2 text-gray-400 hover:text-red-400 transition"
+                title="Logout"
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    </nav>
+      </nav>
+      <FeedbackModal isOpen={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+    </>
   );
 }
 
