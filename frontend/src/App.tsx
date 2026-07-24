@@ -69,20 +69,20 @@ function Navigation() {
               {user.name.charAt(0).toUpperCase()}
             </div>
             <span className="text-sm text-gray-300">{user.name}</span>
-<button
-  onClick={startTourManually}
-  className="p-2 text-gray-400 hover:text-blue-400 transition"
-  title="Start Tour"
->
-  <HelpCircle size={16} />
-</button>
-<button
-  onClick={logout}
-  className="p-2 text-gray-400 hover:text-red-400 transition"
-  title="Logout"
->
-  <LogOut size={16} />
-</button>
+            <button
+              onClick={startTourManually}
+              className="p-2 text-gray-400 hover:text-blue-400 transition"
+              title="Start Tour"
+            >
+              <HelpCircle size={16} />
+            </button>
+            <button
+              onClick={logout}
+              className="p-2 text-gray-400 hover:text-red-400 transition"
+              title="Logout"
+            >
+              <LogOut size={16} />
+            </button>
           </div>
         </div>
       </div>
@@ -96,7 +96,6 @@ function AppContent() {
       <Navigation />
       <AppTour />
       <Routes>
-
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         
