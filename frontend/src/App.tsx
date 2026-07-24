@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { Upload, MessageSquare, BarChart3, LayoutDashboard, LogOut, Award, History } from 'lucide-react';
+import { Upload, MessageSquare, BarChart3, LayoutDashboard, LogOut, Award, History, HelpCircle } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import UploadPage from './pages/UploadPage';
@@ -12,6 +12,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AdminDashboard from './pages/AdminDashboard';
 import HistoryPage from './pages/HistoryPage';
+import AppTour, { startTourManually } from './components/AppTour';
 
 function Navigation() {
   const location = useLocation();
@@ -68,13 +69,20 @@ function Navigation() {
               {user.name.charAt(0).toUpperCase()}
             </div>
             <span className="text-sm text-gray-300">{user.name}</span>
-            <button
-              onClick={logout}
-              className="p-2 text-gray-400 hover:text-red-400 transition"
-              title="Logout"
-            >
-              <LogOut size={16} />
-            </button>
+<button
+  onClick={startTourManually}
+  className="p-2 text-gray-400 hover:text-blue-400 transition"
+  title="Start Tour"
+>
+  <HelpCircle size={16} />
+</button>
+<button
+  onClick={logout}
+  className="p-2 text-gray-400 hover:text-red-400 transition"
+  title="Logout"
+>
+  <LogOut size={16} />
+</button>
           </div>
         </div>
       </div>
@@ -86,7 +94,9 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       <Navigation />
+      <AppTour />
       <Routes>
+
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         

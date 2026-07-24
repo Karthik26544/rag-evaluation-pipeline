@@ -8,3 +8,54 @@ body {
   -webkit-font-smoothing: antialiased;
   background-color: #030712;
 }
+
+/* Tour styling for dark theme */
+.driver-popover {
+  background-color: #1F2937 !important;
+  color: #ffffff !important;
+  border: 1px solid #374151 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5) !important;
+}
+
+.driver-popover-title {
+  color: #60A5FA !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  margin-bottom: 8px !important;
+}
+
+.driver-popover-description {
+  color: #D1D5DB !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+}
+
+.driver-popover-footer button {
+  border-radius: 8px !important;
+  padding: 8px 16px !important;
+  font-weight: 500 !important;
+}
+
+.driver-popover-next-btn {
+  background: linear-gradient(to right, #3B82F6, #8B5CF6) !important;
+  color: white !important;
+  border: none !important;
+  text-shadow: none !important;
+}
+
+.driver-popover-prev-btn {
+  background-color: #374151 !important;
+  color: #D1D5DB !important;
+  border: none !important;
+  text-shadow: none !important;
+}
+
+.driver-popover-close-btn {
+  color: #9CA3AF !important;
+}
+
+.driver-popover-progress-text {
+  color: #6B7280 !important;
+  font-size: 12px !important;
+}
