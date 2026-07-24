@@ -34,7 +34,6 @@ export default function AdminDashboard() {
   const [queries, setQueries] = useState<any[]>([]);
   const [analytics, setAnalytics] = useState(defaultAnalytics);
   const [feedbackList, setFeedbackList] = useState<any[]>([]);
-  const [feedbackStats, setFeedbackStats] = useState<any>(null);
   const [loaded, setLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [searchTerm, setSearchTerm] = useState('');
@@ -63,7 +62,6 @@ export default function AdminDashboard() {
       if (results[2].status === 'fulfilled') setQueries(results[2].value.data?.queries || []);
       if (results[3].status === 'fulfilled') setAnalytics({ ...defaultAnalytics, ...results[3].value.data });
       if (results[4] && results[4].status === 'fulfilled') setFeedbackList(results[4].value.data?.feedback || []);
-      if (results[5] && results[5].status === 'fulfilled') setFeedbackStats(results[5].value.data || {});
       
       setLoaded(true);
     } catch (err) {
