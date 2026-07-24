@@ -34,10 +34,10 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState<any[]>([]);
   const [queries, setQueries] = useState<any[]>([]);
   const [analytics, setAnalytics] = useState<any>(defaultAnalytics);
+  const [feedbackList, setFeedbackList] = useState<any[]>([]);
+  const [feedbackStats, setFeedbackStats] = useState<any>(null);
   const [loaded, setLoaded] = useState(false);
-const [activeTab, setActiveTab] = useState('overview');
-const [feedbackList, setFeedbackList] = useState<any[]>([]);
-const [feedbackStats, setFeedbackStats] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState('overview');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userDetails, setUserDetails] = useState<any>(null);
@@ -48,7 +48,7 @@ const [feedbackStats, setFeedbackStats] = useState<any>(null);
     return () => clearInterval(interval);
   }, []);
 
-const fetchAll = async () => {
+  const fetchAll = async () => {
     try {
       const results = await Promise.allSettled([
         axios.get(`${API}/admin/stats`),
@@ -68,7 +68,7 @@ const fetchAll = async () => {
       if (results[2].status === 'fulfilled') {
         setQueries(results[2].value.data?.queries || []);
       }
-if (results[3].status === 'fulfilled') {
+      if (results[3].status === 'fulfilled') {
         setAnalytics({ ...defaultAnalytics, ...results[3].value.data });
       }
       if (results[4] && results[4].status === 'fulfilled') {
@@ -197,7 +197,7 @@ if (results[3].status === 'fulfilled') {
       </div>
 
       <div className="flex gap-2 mb-4 border-b border-gray-800">
-{['overview', 'users', 'queries', 'feedback'].map(tab => (
+        {['overview', 'users', 'queries', 'feedback'].map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -391,7 +391,7 @@ if (results[3].status === 'fulfilled') {
         </div>
       )}
 
-{activeTab === 'feedback' && (
+      {activeTab === 'feedback' && (
         <div>
           {feedbackStats && feedbackStats.total_feedback > 0 && (
             <div className="grid grid-cols-4 gap-4 mb-6">
@@ -402,7 +402,7 @@ if (results[3].status === 'fulfilled') {
               <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
                 <p className="text-sm text-gray-400 mb-1">Average Rating</p>
                 <p className="text-2xl font-bold text-yellow-400">
-                  ⭐ {parseFloat(feedbackStats.avg_rating).toFixed(1)}
+                  {parseFloat(feedbackStats.avg_rating).toFixed(1)}
                 </p>
               </div>
               <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
@@ -412,7 +412,7 @@ if (results[3].status === 'fulfilled') {
               <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
                 <p className="text-sm text-gray-400 mb-1">Needs Attention</p>
                 <p className="text-2xl font-bold text-red-400">
-                  {feedbackStats.one_star + feedbackStats.two_star}
+                  {(feedbackStats.one_star || 0) + (feedbackStats.two_star || 0)}
                 </p>
               </div>
             </div>
@@ -447,7 +447,7 @@ if (results[3].status === 'fulfilled') {
                     </div>
                   </div>
                   {f.comment && (
-                    <p className="text-sm text-gray-300 mt-2 pl-13">{f.comment}</p>
+                    <p className="text-sm text-gray-300 mt-2">{f.comment}</p>
                   )}
                 </div>
               ))
@@ -455,6 +455,8 @@ if (results[3].status === 'fulfilled') {
           </div>
         </div>
       )}
+
+      {activeTab === 'queries' && (
         <div className="space-y-3">
           {queries.length === 0 ? (
             <p className="text-center text-gray-500 py-8">No queries yet</p>
@@ -469,10 +471,10 @@ if (results[3].status === 'fulfilled') {
                 </div>
                 <p className="text-sm text-gray-400 mb-3 line-clamp-2">{q.answer}</p>
                 <div className="flex gap-3 text-xs text-gray-500 flex-wrap">
-                  <span>👤 {q.user_name || 'Anonymous'}</span>
-                  <span>🎯 {pct(q.confidence_score)}%</span>
-                  <span>⏱️ {num(q.latency_ms)}ms</span>
-                  <span>🔍 {q.search_type}</span>
+                  <span>User: {q.user_name || 'Anonymous'}</span>
+                  <span>Confidence: {pct(q.confidence_score)}%</span>
+                  <span>Latency: {num(q.latency_ms)}ms</span>
+                  <span>Method: {q.search_type}</span>
                 </div>
               </div>
             ))
@@ -553,9 +555,9 @@ if (results[3].status === 'fulfilled') {
                       <p className="font-medium mb-1">{q.question}</p>
                       <p className="text-xs text-gray-400 line-clamp-2 mb-1">{q.answer}</p>
                       <div className="flex gap-3 text-xs text-gray-500">
-                        <span>🎯 {pct(q.confidence_score)}%</span>
-                        <span>⏱️ {num(q.latency_ms)}ms</span>
-                        <span>🔍 {q.search_type}</span>
+                        <span>Confidence: {pct(q.confidence_score)}%</span>
+                        <span>Latency: {num(q.latency_ms)}ms</span>
+                        <span>Method: {q.search_type}</span>
                       </div>
                     </div>
                   ))}
