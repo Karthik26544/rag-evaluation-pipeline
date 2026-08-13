@@ -1,13 +1,11 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-limiter = Limiter(key_func=get_remote_address)
 import os
 import uuid
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from services.document_processor import DocumentProcessor
 from services.vector_store import VectorStore
@@ -15,12 +13,16 @@ from services.vector_store import VectorStore
 load_dotenv()
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
+
 processor = DocumentProcessor()
 vector_store = VectorStore()
+
 
 def get_db():
     conn = psycopg2.connect(os.getenv("DATABASE_URL"))
     return conn
+
 
 @router.post("/upload")
 @limiter.limit("5/minute")
@@ -100,14 +102,16 @@ async def upload_document(
             "message": f"Document processed with {len(chunks)} chunks"
         }
 
-except Exception as e:
-    error_str = str(e)
-    if "quota" in error_str.lower() or "429" in error_str or "rate limit" in error_str.lower():
-        raise HTTPException(
-            status_code=429, 
-            detail="Rate limit reached on Gemini API. Please try a smaller document or wait 60 seconds and try again."
-        )
-    raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_str = str(e)
+        if "quota" in error_str.lower() or "429" in error_str or "rate limit" in error_str.lower():
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit reached on Gemini API. Please try a smaller document or wait 60 seconds and try again."
+            )
+        raise HTTPException(status_code=500, detail=str(e))
 
     finally:
         if os.path.exists(temp_path):
