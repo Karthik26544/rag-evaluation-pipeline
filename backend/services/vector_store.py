@@ -1,4 +1,3 @@
-# Version 2 - Updated model to gemini-embedding-001
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
@@ -10,6 +9,7 @@ from qdrant_client.models import (
 )
 import uuid
 import os
+import time
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 
@@ -55,50 +55,61 @@ class VectorStore:
         self._ensure_collection()
 
     def _embed(self, texts):
-    if USE_GEMINI_EMBEDDINGS:
-        import time
-        embeddings = []
-        
-        for i, text in enumerate(texts):
+        if USE_GEMINI_EMBEDDINGS:
+            embeddings = []
+            
+            for i, text in enumerate(texts):
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        result = genai.embed_content(
+                            model=GEMINI_EMBED_MODEL,
+                            content=text,
+                            task_type="retrieval_document"
+                        )
+                        embeddings.append(result['embedding'])
+                        
+                        # Small delay to avoid rate limiting (stay under 100/min = 1 per 0.7s)
+                        if i < len(texts) - 1:
+                            time.sleep(0.7)
+                        break
+                        
+                    except Exception as e:
+                        error_str = str(e)
+                        if "429" in error_str or "quota" in error_str.lower():
+                            wait_time = 35
+                            print(f"Rate limit hit. Waiting {wait_time}s before retry (attempt {attempt + 1}/{max_retries})")
+                            time.sleep(wait_time)
+                            if attempt == max_retries - 1:
+                                raise Exception(f"Rate limit exceeded after {max_retries} attempts. Please try smaller documents or wait a few minutes.")
+                        else:
+                            raise
+            
+            return embeddings
+        else:
+            return self.model.encode(texts, show_progress_bar=False).tolist()
+
+    def _embed_query(self, text):
+        if USE_GEMINI_EMBEDDINGS:
             max_retries = 3
             for attempt in range(max_retries):
                 try:
                     result = genai.embed_content(
                         model=GEMINI_EMBED_MODEL,
                         content=text,
-                        task_type="retrieval_document"
+                        task_type="retrieval_query"
                     )
-                    embeddings.append(result['embedding'])
-                    
-                    # Small delay to avoid rate limiting (stay under 100/min = 1 per 0.6s)
-                    if i < len(texts) - 1:
-                        time.sleep(0.7)
-                    break
-                    
+                    return result['embedding']
                 except Exception as e:
                     error_str = str(e)
                     if "429" in error_str or "quota" in error_str.lower():
-                        # Extract retry delay from error, default 35 seconds
                         wait_time = 35
-                        print(f"Rate limit hit. Waiting {wait_time}s before retry (attempt {attempt + 1}/{max_retries})")
+                        print(f"Query rate limit hit. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})")
                         time.sleep(wait_time)
                         if attempt == max_retries - 1:
-                            raise Exception(f"Rate limit exceeded after {max_retries} attempts. Please try smaller documents or wait a few minutes.")
+                            raise Exception("Rate limit exceeded. Please wait 60 seconds and try again.")
                     else:
                         raise
-        
-        return embeddings
-    else:
-        return self.model.encode(texts, show_progress_bar=False).tolist()
-
-    def _embed_query(self, text):
-        if USE_GEMINI_EMBEDDINGS:
-            result = genai.embed_content(
-                model=GEMINI_EMBED_MODEL,
-                content=text,
-                task_type="retrieval_query"
-            )
-            return result['embedding']
         else:
             return self.model.encode([text])[0].tolist()
 
