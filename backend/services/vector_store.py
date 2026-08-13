@@ -55,18 +55,41 @@ class VectorStore:
         self._ensure_collection()
 
     def _embed(self, texts):
-        if USE_GEMINI_EMBEDDINGS:
-            embeddings = []
-            for text in texts:
-                result = genai.embed_content(
-                    model=GEMINI_EMBED_MODEL,
-                    content=text,
-                    task_type="retrieval_document"
-                )
-                embeddings.append(result['embedding'])
-            return embeddings
-        else:
-            return self.model.encode(texts, show_progress_bar=False).tolist()
+    if USE_GEMINI_EMBEDDINGS:
+        import time
+        embeddings = []
+        
+        for i, text in enumerate(texts):
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    result = genai.embed_content(
+                        model=GEMINI_EMBED_MODEL,
+                        content=text,
+                        task_type="retrieval_document"
+                    )
+                    embeddings.append(result['embedding'])
+                    
+                    # Small delay to avoid rate limiting (stay under 100/min = 1 per 0.6s)
+                    if i < len(texts) - 1:
+                        time.sleep(0.7)
+                    break
+                    
+                except Exception as e:
+                    error_str = str(e)
+                    if "429" in error_str or "quota" in error_str.lower():
+                        # Extract retry delay from error, default 35 seconds
+                        wait_time = 35
+                        print(f"Rate limit hit. Waiting {wait_time}s before retry (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(wait_time)
+                        if attempt == max_retries - 1:
+                            raise Exception(f"Rate limit exceeded after {max_retries} attempts. Please try smaller documents or wait a few minutes.")
+                    else:
+                        raise
+        
+        return embeddings
+    else:
+        return self.model.encode(texts, show_progress_bar=False).tolist()
 
     def _embed_query(self, text):
         if USE_GEMINI_EMBEDDINGS:

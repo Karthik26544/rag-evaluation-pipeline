@@ -47,8 +47,13 @@ export default function UploadPage() {
       toast.success(`Uploaded! ${res.data.total_chunks} chunks created`);
       setFile(null);
       fetchDocuments();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Upload failed');
+} catch (err: any) {
+      const errorMsg = err.response?.data?.detail || 'Upload failed';
+      if (err.response?.status === 429 || errorMsg.toLowerCase().includes('rate limit') || errorMsg.toLowerCase().includes('quota')) {
+        toast.error('Rate limit reached. Please wait 60 seconds and try a smaller document.', { duration: 6000 });
+      } else {
+        toast.error(errorMsg);
+      }
     } finally {
       setUploading(false);
     }

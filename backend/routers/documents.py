@@ -100,8 +100,14 @@ async def upload_document(
             "message": f"Document processed with {len(chunks)} chunks"
         }
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+except Exception as e:
+    error_str = str(e)
+    if "quota" in error_str.lower() or "429" in error_str or "rate limit" in error_str.lower():
+        raise HTTPException(
+            status_code=429, 
+            detail="Rate limit reached on Gemini API. Please try a smaller document or wait 60 seconds and try again."
+        )
+    raise HTTPException(status_code=500, detail=str(e))
 
     finally:
         if os.path.exists(temp_path):
