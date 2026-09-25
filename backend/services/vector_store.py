@@ -38,6 +38,12 @@ class VectorStore:
             self.model = SentenceTransformer("BAAI/bge-small-en-v1.5")
             print("Local embedding model loaded")
 
+        self.collection_name = os.getenv("COLLECTION_NAME", "documents")
+        self._init_client()
+        self._ensure_collection()
+
+    def _init_client(self):
+        """Initialize or refresh Qdrant client connection"""
         qdrant_api_key = os.getenv("QDRANT_API_KEY")
         qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
 
@@ -45,18 +51,14 @@ class VectorStore:
             self.client = QdrantClient(
                 url=qdrant_url,
                 api_key=qdrant_api_key,
-                timeout=20.0
+                timeout=60.0,
+                prefer_grpc=False
             )
-            print("Connected to Qdrant Cloud")
         else:
             self.client = QdrantClient(
                 url=qdrant_url,
-                timeout=20.0
+                timeout=60.0
             )
-            print("Connected to local Qdrant")
-
-        self.collection_name = os.getenv("COLLECTION_NAME", "documents")
-        self._ensure_collection()
 
     def _embed(self, texts: List[str]) -> List[List[float]]:
         if USE_GEMINI_EMBEDDINGS:
@@ -65,25 +67,32 @@ class VectorStore:
             
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i + batch_size]
-                try:
-                    result = genai.embed_content(
-                        model=GEMINI_EMBED_MODEL,
-                        content=batch,
-                        task_type="retrieval_document"
-                    )
-                    if isinstance(result['embedding'][0], list):
-                        embeddings.extend(result['embedding'])
-                    else:
-                        embeddings.append(result['embedding'])
-                except Exception as e:
-                    # Fallback to individual items if batching fails
-                    for item in batch:
-                        res = genai.embed_content(
+                max_retries = 3
+                
+                for attempt in range(max_retries):
+                    try:
+                        result = genai.embed_content(
                             model=GEMINI_EMBED_MODEL,
-                            content=item,
+                            content=batch,
                             task_type="retrieval_document"
                         )
-                        embeddings.append(res['embedding'])
+                        if isinstance(result['embedding'][0], list):
+                            embeddings.extend(result['embedding'])
+                        else:
+                            embeddings.append(result['embedding'])
+                        break
+                    except Exception as e:
+                        error_str = str(e)
+                        if "429" in error_str or "quota" in error_str.lower():
+                            wait_time = 15
+                            print(f"Embedding rate limit hit. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                            time.sleep(wait_time)
+                            if attempt == max_retries - 1:
+                                raise Exception("Rate limit reached on Gemini embeddings. Please wait 30 seconds and try again.")
+                        else:
+                            if attempt == max_retries - 1:
+                                raise e
+                            time.sleep(1)
             
             return embeddings
         else:
@@ -91,33 +100,51 @@ class VectorStore:
 
     def _embed_query(self, text: str) -> List[float]:
         if USE_GEMINI_EMBEDDINGS:
-            result = genai.embed_content(
-                model=GEMINI_EMBED_MODEL,
-                content=text,
-                task_type="retrieval_query"
-            )
-            return result['embedding']
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    result = genai.embed_content(
+                        model=GEMINI_EMBED_MODEL,
+                        content=text,
+                        task_type="retrieval_query"
+                    )
+                    return result['embedding']
+                except Exception as e:
+                    error_str = str(e)
+                    if "429" in error_str or "quota" in error_str.lower():
+                        time.sleep(10)
+                        if attempt == max_retries - 1:
+                            raise Exception("Rate limit reached. Please wait 30 seconds.")
+                    else:
+                        if attempt == max_retries - 1:
+                            raise e
+                        time.sleep(1)
         else:
             return self.model.encode([text])[0].tolist()
 
     def _ensure_collection(self):
-        try:
-            collections = self.client.get_collections().collections
-            names = [c.name for c in collections]
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                collections = self.client.get_collections().collections
+                names = [c.name for c in collections]
 
-            if self.collection_name not in names:
-                self.client.create_collection(
-                    collection_name=self.collection_name,
-                    vectors_config=VectorParams(
-                        size=EMBEDDING_DIM,
-                        distance=Distance.COSINE
+                if self.collection_name not in names:
+                    self.client.create_collection(
+                        collection_name=self.collection_name,
+                        vectors_config=VectorParams(
+                            size=EMBEDDING_DIM,
+                            distance=Distance.COSINE
+                        )
                     )
-                )
-                print(f"Created collection: {self.collection_name} (dim {EMBEDDING_DIM})")
-            else:
-                print(f"Collection exists: {self.collection_name}")
-        except Exception as e:
-            print(f"Warning: Qdrant collection check deferred: {e}")
+                    print(f"Created collection: {self.collection_name} (dim {EMBEDDING_DIM})")
+                else:
+                    print(f"Collection exists: {self.collection_name}")
+                return
+            except Exception as e:
+                print(f"Qdrant collection check attempt {attempt + 1} failed: {e}")
+                self._init_client()  # Reconnect on drop
+                time.sleep(1)
 
     def add_chunks(self, chunks: List[Dict], document_id: str) -> List[str]:
         texts = [chunk["content"] for chunk in chunks]
@@ -142,10 +169,25 @@ class VectorStore:
                 }
             ))
 
-        self.client.upsert(
-            collection_name=self.collection_name,
-            points=points
-        )
+        # Upsert in small batches of 10 with automatic reconnection if socket drops
+        batch_size = 10
+        for i in range(0, len(points), batch_size):
+            batch_points = points[i:i + batch_size]
+            max_retries = 3
+            
+            for attempt in range(max_retries):
+                try:
+                    self.client.upsert(
+                        collection_name=self.collection_name,
+                        points=batch_points
+                    )
+                    break
+                except Exception as e:
+                    print(f"Qdrant batch upsert failed (attempt {attempt + 1}/{max_retries}): {e}")
+                    self._init_client()  # Re-establish fresh TCP connection
+                    if attempt == max_retries - 1:
+                        raise Exception("Failed to connect to Qdrant Cloud. Please try again.")
+                    time.sleep(1)
 
         return chunk_ids
 
@@ -161,12 +203,24 @@ class VectorStore:
                 )]
             )
 
-        response = self.client.query_points(
-            collection_name=self.collection_name,
-            query=query_embedding,
-            limit=top_k,
-            query_filter=search_filter
-        )
+        max_retries = 3
+        response = None
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.client.query_points(
+                    collection_name=self.collection_name,
+                    query=query_embedding,
+                    limit=top_k,
+                    query_filter=search_filter
+                )
+                break
+            except Exception as e:
+                print(f"Qdrant query failed (attempt {attempt + 1}/{max_retries}): {e}")
+                self._init_client()  # Re-establish fresh connection
+                if attempt == max_retries - 1:
+                    raise Exception("Vector search failed. Please try again.")
+                time.sleep(1)
 
         results = response.points if response else []
 
