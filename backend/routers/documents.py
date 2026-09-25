@@ -58,6 +58,9 @@ async def upload_document(
             )
 
         chunks = processor.chunk_text(text, strategy=chunking_strategy)
+        # Cap chunks to max 100 per document for free tier stability
+        if len(chunks) > 100:
+            chunks = chunks[:100]
 
         conn = get_db()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
