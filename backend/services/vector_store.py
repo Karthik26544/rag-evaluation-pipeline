@@ -39,15 +39,19 @@ class VectorStore:
             print("Local embedding model loaded")
 
         qdrant_api_key = os.getenv("QDRANT_API_KEY")
+        qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+
         if qdrant_api_key:
             self.client = QdrantClient(
-                url=os.getenv("QDRANT_URL"),
-                api_key=qdrant_api_key
+                url=qdrant_url,
+                api_key=qdrant_api_key,
+                timeout=30.0
             )
             print("Connected to Qdrant Cloud")
         else:
             self.client = QdrantClient(
-                url=os.getenv("QDRANT_URL", "http://localhost:6333")
+                url=qdrant_url,
+                timeout=30.0
             )
             print("Connected to local Qdrant")
 
@@ -69,7 +73,6 @@ class VectorStore:
                         )
                         embeddings.append(result['embedding'])
                         
-                        # Small delay to avoid rate limiting (stay under 100/min = 1 per 0.7s)
                         if i < len(texts) - 1:
                             time.sleep(0.7)
                         break
@@ -81,7 +84,7 @@ class VectorStore:
                             print(f"Rate limit hit. Waiting {wait_time}s before retry (attempt {attempt + 1}/{max_retries})")
                             time.sleep(wait_time)
                             if attempt == max_retries - 1:
-                                raise Exception(f"Rate limit exceeded after {max_retries} attempts. Please try smaller documents or wait a few minutes.")
+                                raise Exception("Rate limit exceeded after multiple attempts. Please try smaller documents or wait a few minutes.")
                         else:
                             raise
             
@@ -114,20 +117,30 @@ class VectorStore:
             return self.model.encode([text])[0].tolist()
 
     def _ensure_collection(self):
-        collections = self.client.get_collections().collections
-        names = [c.name for c in collections]
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                collections = self.client.get_collections().collections
+                names = [c.name for c in collections]
 
-        if self.collection_name not in names:
-            self.client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=VectorParams(
-                    size=EMBEDDING_DIM,
-                    distance=Distance.COSINE
-                )
-            )
-            print(f"Created collection: {self.collection_name} (dim {EMBEDDING_DIM})")
-        else:
-            print(f"Collection exists: {self.collection_name}")
+                if self.collection_name not in names:
+                    self.client.create_collection(
+                        collection_name=self.collection_name,
+                        vectors_config=VectorParams(
+                            size=EMBEDDING_DIM,
+                            distance=Distance.COSINE
+                        )
+                    )
+                    print(f"Created collection: {self.collection_name} (dim {EMBEDDING_DIM})")
+                else:
+                    print(f"Collection exists: {self.collection_name}")
+                return
+            except Exception as e:
+                print(f"Qdrant connection attempt {attempt + 1}/{max_retries} failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(3)
+                else:
+                    print("Warning: Could not check collection immediately. Proceeding anyway.")
 
     def add_chunks(self, chunks: List[Dict], document_id: str) -> List[str]:
         texts = [chunk["content"] for chunk in chunks]
