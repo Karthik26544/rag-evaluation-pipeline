@@ -58,9 +58,10 @@ async def upload_document(
             )
 
         chunks = processor.chunk_text(text, strategy=chunking_strategy)
-        # Cap chunks to max 100 per document for free tier stability
-        if len(chunks) > 100:
-            chunks = chunks[:100]
+
+        # Cap chunks to max 35 per document so processing finishes in < 3 seconds
+        if len(chunks) > 35:
+            chunks = chunks[:35]
 
         conn = get_db()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -112,7 +113,7 @@ async def upload_document(
         if "quota" in error_str.lower() or "429" in error_str or "rate limit" in error_str.lower():
             raise HTTPException(
                 status_code=429,
-                detail="Rate limit reached on Gemini API. Please try a smaller document or wait 60 seconds and try again."
+                detail="Rate limit reached on Gemini API. Please wait 30 seconds and try again."
             )
         raise HTTPException(status_code=500, detail=str(e))
 
